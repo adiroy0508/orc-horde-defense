@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Horde Defense</title>
+<style>
+html,body{margin:0;background:#0b0d10;color:#eee;font-family:Arial,sans-serif;height:100%;overflow:hidden}
+#app{display:flex;height:100vh}
+#side{width:250px;background:#15191e;border-right:2px solid #30363d;padding:14px;box-sizing:border-box}
+h1{font-size:20px;margin:0 0 4px}.sub{color:#999;font-size:12px;margin-bottom:14px}
+.stat{display:flex;justify-content:space-between;border-bottom:1px solid #2a3037;padding:7px 0;font-size:13px}
+button{width:100%;margin:5px 0;padding:10px;border:1px solid #4a535d;background:#222930;color:#fff;border-radius:5px;cursor:pointer}
+button:hover{background:#303942}button:disabled{opacity:.35;cursor:not-allowed}
+.section{margin-top:15px;font-size:12px;color:#aaa;text-transform:uppercase;letter-spacing:1px}
+#gamewrap{position:relative;flex:1;background:#182017}
+canvas{display:block;width:100%;height:100%}
+#msg{position:absolute;left:50%;top:18px;transform:translateX(-50%);padding:9px 14px;background:#111c;border:1px solid #556;border-radius:5px;font-size:13px}
+#hint{position:absolute;right:15px;bottom:12px;color:#bbb;background:#10150dcc;padding:8px;border-radius:4px;font-size:11px}
+</style>
+</head>
+<body>
+<div id="app">
+<aside id="side">
+<h1>Horde Defense</h1><div class="sub">Build. Survive. Upgrade.</div>
+<div class="stat"><span>Credits</span><b id="money">250</b></div>
+<div class="stat"><span>Base HP</span><b id="hp">100</b></div>
+<div class="stat"><span>Wave</span><b id="wave">1</b></div>
+<div class="stat"><span>Horde</span><b id="count">0</b></div>
+<div class="section">Defences</div>
+<button id="gun">Gunner — $50</button>
+<button id="flame">Flamethrower — $80</button>
+<button id="mortar">Mortar — $120</button>
+<button id="cannon">Cannon — $160</button>
+<div class="section">Abilities</div>
+<button id="missile">Missile Strike</button>
+<button id="laser">Orbital Laser</button>
+<div class="section">Upgrades</div>
+<button id="dmg">Damage Upgrade — $150</button>
+<button id="rate">Fire Rate Upgrade — $200</button>
+<button id="income">Economy Upgrade — $250</button>
+<div class="section">Run</div>
+<button id="start">START WAVE</button>
+<button id="reset">NEW RUN</button>
+</aside>
+<div id="gamewrap"><canvas id="c"></canvas><div id="msg">BUILD PHASE — place defences, then start the wave</div><div id="hint">Click a defence, then click the map. Survive the horde.</div></div>
+</div>
+<script>
+const c=document.getElementById('c'),ctx=c.getContext('2d');
+let W,H,mouse={x:0,y:0},money=250,hp=100,wave=1,phase='build',enemies=[],towers=[],shots=[],effects=[];
+let dmg=1,rate=1,income=1,selected=null,spawn=0,kills=0,ability={missile:0,laser:0};
+const path=[[-.02,.25],[.18,.25],[.33,.52],[.55,.52],[.70,.30],[1.02,.30]];
+function resize(){W=c.width=innerWidth-250;H=c.height=innerHeight}addEventListener('resize',resize);resize();
+function P(p){return{x:p[0]*W,y:p[1]*H}}
+function lerp(a,b,t){return a+(b-a)*t}
+function pathPoint(s){let total=0,segs=[];for(let i=0;i<path.length-1;i++){let a=P(path[i]),b=P(path[i+1]),d=Math.hypot(b.x-a.x,b.y-a.y);segs.push(d);total+=d}let q=s*total,acc=0;for(let i=0;i<segs.length;i++){if(q<=acc+segs[i]){let t=(q-acc)/segs[i],a=P(path[i]),b=P(path[i+1]);return{x:lerp(a.x,b.x,t),y:lerp(a.y,b.y,t)}}acc+=segs[i]}return P(path[path.length-1])}
+function setText(){moneyEl.textContent=Math.floor(money);hpEl.textContent=Math.max(0,Math.floor(hp));waveEl.textContent=wave;countEl.textContent=enemies.length}
+const moneyEl=document.getElementById('money'),hpEl=document.getElementById('hp'),waveEl=document.getElementById('wave'),countEl=document.getElementById('count');
+const prices={gun:50,flame:80,mortar:120,cannon:160};
+for(const k in prices)document.getElementById(k).onclick=()=>selected=k;
+document.getElementById('start').onclick=()=>{if(phase==='build'){phase='battle';spawn=0;msg('WAVE '+wave+' — HOLD THE LINE');}}
+document.getElementById('reset').onclick=()=>location.reload();
+document.getElementById('dmg').onclick=()=>{if(money>=150){money-=150;dmg*=1.22}};
+document.getElementById('rate').onclick=()=>{if(money>=200){money-=200;rate*=1.2}};
+document.getElementById('income').onclick=()=>{if(money>=250){money-=250;income*=1.2}};
+document.getElementById('missile').onclick=()=>{if(money>=100&&phase==='battle'){money-=100;ability.missile=1}};
+document.getElementById('laser').onclick=()=>{if(money>=160&&phase==='battle'){money-=160;ability.laser=1}};
+c.addEventListener('mousemove',e=>{mouse.x=e.offsetX;mouse.y=e.offsetY});
+c.addEventListener('click',e=>{
+ if(phase==='build'&&selected){let cost=prices[selected];if(money>=cost&&mouse.x>15&&mouse.y>15){money-=cost;towers.push({x:mouse.x,y:mouse.y,type:selected,cd:0,range:selected==='mortar'?230:170});selected=null}}
+});
+function msg(s){document.getElementById('msg').textContent=s}
+function spawnEnemy(){let strength=1+wave*.13;enemies.push({s:-.01-Math.random()*.05,hp:20*strength,max:20*strength,spd:.000018+Math.random()*.000012,r:4+Math.random()*3})}
+function damageEnemy(e,n){e.hp-=n;if(e.hp<=0){money+=Math.round(7*income);kills++;return true}return false}
+function update(dt){
+ if(phase==='battle'){
+   let target=Math.min(8000,60+wave*45);
+   if(enemies.length<target){spawn+=dt;if(spawn>Math.max(10,60-wave*2)){for(let i=0;i<Math.min(5,1+Math.floor(wave/4));i++)spawnEnemy();spawn=0}}
+   for(let e of enemies)e.s+=e.spd*dt;
+   for(let e of enemies){if(e.s>=1){hp-=.8;e.dead=true}}
+   enemies=enemies.filter(e=>!e.dead&&e.s<1);
+   for(let t of towers){
+     t.cd-=dt;if(t.cd<=0){
+       let best=null,bd=1e9;
+       for(let e of enemies){let p=pathPoint(e.s),d=Math.hypot(p.x-t.x,p.y-t.y);if(d<t.range&&d<bd){best=e;bd=d}}
+       if(best){let mult=t.type==='cannon'?4:t.type==='mortar'?3:t.type==='flame'?.7:1.2;let boom=t.type==='mortar'||t.type==='cannon';if(boom){for(let e of enemies){let p=pathPoint(e.s),d=Math.hypot(p.x-pathPoint(best.s).x,p.y-pathPoint(best.s).y);if(d<55)damageEnemy(e,dmg*mult)}effects.push({x:pathPoint(best.s).x,y:pathPoint(best.s).y,t:.35,type:'boom'})}else damageEnemy(best,dmg*mult);shots.push({x:t.x,y:t.y,tx:pathPoint(best.s).x,ty:pathPoint(best.s).y,t:.15});t.cd=(t.type==='flame'?16:35)/rate}}
+   }
+   if(ability.missile){for(let e of enemies){if(Math.random()<.12)damageEnemy(e,18*dmg)}effects.push({x:W*.55,y:H*.5,t:.7,type:'boom'});ability.missile=0}
+   if(ability.laser){for(let e of enemies){if(Math.random()<.25)damageEnemy(e,25*dmg)}effects.push({x:W*.65,y:H*.5,t:.9,type:'laser'});ability.laser=0}
+   if(enemies.length===0&&spawn>150){phase='build';money+=Math.round((150+wave*35)*income);wave++;msg('WAVE CLEARED — BUILD PHASE')}
+   if(hp<=0){phase='over';msg('BASE LOST — press NEW RUN')}
+ }
+ for(let s of shots)s.t-=dt/1000;shots=shots.filter(s=>s.t>0);
+ for(let e of effects)e.t-=dt/1000;effects=effects.filter(e=>e.t>0);
+ setText();
+}
+function draw(){
+ ctx.clearRect(0,0,W,H);ctx.fillStyle='#1b2518';ctx.fillRect(0,0,W,H);
+ ctx.strokeStyle='#374332';ctx.lineWidth=70;ctx.lineCap='round';ctx.beginPath();path.forEach((q,i)=>{let p=P(q);i?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y)});ctx.stroke();
+ ctx.strokeStyle='#58634f';ctx.lineWidth=48;ctx.beginPath();path.forEach((q,i)=>{let p=P(q);i?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y)});ctx.stroke();
+ for(const t of towers){ctx.beginPath();ctx.arc(t.x,t.y,t.range,0,7);ctx.fillStyle='rgba(120,160,100,.05)';ctx.fill();ctx.strokeStyle='rgba(150,180,130,.15)';ctx.stroke();ctx.fillStyle=t.type==='flame'?'#e87932':t.type==='mortar'?'#9a9a9a':t.type==='cannon'?'#4b82b8':'#d7d7d7';ctx.fillRect(t.x-10,t.y-10,20,20);ctx.strokeStyle='#111';ctx.strokeRect(t.x-10,t.y-10,20,20)}
+ for(const e of enemies){let p=pathPoint(e.s);ctx.fillStyle='#55713f';ctx.beginPath();ctx.arc(p.x,p.y,e.r,0,7);ctx.fill();ctx.fillStyle='#151515';ctx.fillRect(p.x-7,p.y-e.r-5,14,2);ctx.fillStyle='#d44';ctx.fillRect(p.x-7,p.y-e.r-5,14*Math.max(0,e.hp/e.max),2)}
+ let base=P([.96,.30]);ctx.fillStyle='#777';ctx.fillRect(base.x-25,base.y-40,50,80);ctx.fillStyle='#b33';ctx.fillRect(base.x-32,base.y-50,64,10);ctx.fillStyle='#e7e7e7';ctx.font='12px Arial';ctx.textAlign='center';ctx.fillText('BASE',base.x,base.y+5);
+ for(const s of shots){ctx.strokeStyle='rgba(255,220,120,.8)';ctx.beginPath();ctx.moveTo(s.x,s.y);ctx.lineTo(s.tx,s.ty);ctx.stroke()}
+ for(const f of effects){ctx.beginPath();ctx.arc(f.x,f.y,(1-f.t)*100,0,7);ctx.strokeStyle=f.type==='laser'?'rgba(120,200,255,.7)':'rgba(255,150,50,.7)';ctx.lineWidth=5;ctx.stroke()}
+ if(selected&&phase==='build'){ctx.strokeStyle='#fff';ctx.setLineDash([5,5]);ctx.beginPath();ctx.arc(mouse.x,mouse.y,prices[selected]?170:100,0,7);ctx.stroke();ctx.setLineDash([])}
+ requestAnimationFrame(draw)
+}
+let last=performance.now();function loop(now){let dt=now-last;last=now;update(dt);requestAnimationFrame(loop)}requestAnimationFrame(loop);draw();
+</script>
+</body>
+</html>
